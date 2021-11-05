@@ -4,8 +4,8 @@ import pandas as pd
 from sklearn.cluster import KMeans
 from scipy.spatial import Voronoi, voronoi_plot_2d
 
-MAX_POWER=6
-MAX_ITER=10000
+MAX_POWER=10
+MAX_ITER=100000
 
 def find_centers(hist_name, out_name, num_clusters, save_first_pow=False):
     df = pd.read_csv(hist_name, delimiter=", ", engine='python')
@@ -19,9 +19,10 @@ def find_centers(hist_name, out_name, num_clusters, save_first_pow=False):
 
     print("Best Power: ", best_pow)
     print("Max/Min: ", ratios[best_pow])
+    print(ratios)
 
     centers = kmeans[best_pow].cluster_centers_
-    nice_path = path_thru_points(pd.DataFrame(centers, columns=["Enu","Q2"]))
+    nice_path = path_thru_points(pd.DataFrame(centers, columns=["Q3","Q0"]))
     pd.DataFrame(centers).iloc[nice_path].to_csv(out_name, index=False, header=False)
 
     if save_first_pow:
