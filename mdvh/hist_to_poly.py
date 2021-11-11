@@ -57,7 +57,7 @@ def calc_bbox_intersection(point_pair, vertex, points, bounds):
         return point_dir_to_bbox(array(vertex), -1*ridge_dir, bounds)
     return trial
 
-def voronoi_polygons_bbox_2d(vor, bmin, bmax):
+def voronoi_polygons_bbox_2d_helper(vor, bmin, bmax):
     if vor.points.shape[1] != 2:
         raise ValueError("Can only plot 2d regions")
     bounds = [bmin, bmax]
@@ -153,7 +153,7 @@ def voronoi_polygons_bbox_2d(points, bmin, bmax):
     vor = Voronoi(points, incremental=True)
     vor.close()
 
-    return voronoi_polygons_bbox_2d(vor, bmin, bmax)
+    return voronoi_polygons_bbox_2d_helper(vor, bmin, bmax)
 
 def calc_area(region, vertices):
     if(len(region) < 3):
@@ -186,8 +186,5 @@ def get_polygons(points, bmin, bmax):
     vor = Voronoi(points, incremental=True)
     vor.close()
     
-    regions, vertices = voronoi_polygons_bbox_2d(vor, bmin, bmax)
-    areas = [calc_area(reg, vertices) for reg in regions]
-    scaled = array(hist)/array(areas)
-    smax = max(scaled)
+    regions, vertices = voronoi_polygons_bbox_2d(points, bmin, bmax)
     return [make_polygon(reg,vertices) for reg in regions]
