@@ -7,7 +7,7 @@ from scipy.spatial import Voronoi, voronoi_plot_2d
 MAX_POWER=6
 MAX_ITER=10000
 
-def find_centers(hist_name, out_name, num_clusters):
+def find_sites(hist_name, out_name, num_clusters):
     df = pd.read_csv(hist_name, delimiter=", ", engine='python')
 
     content = df.columns.values[-1]
@@ -24,9 +24,9 @@ def find_centers(hist_name, out_name, num_clusters):
     print("Best Power: ", best_pow)
     print("Max/Min: ", ratios[best_pow])
 
-    centers = kmeans[best_pow].cluster_centers_
-    nice_path = path_thru_points(pd.DataFrame(centers, columns=coords))
-    pd.DataFrame(centers).iloc[nice_path].to_csv(out_name, index=False, header=False)
+    sites = kmeans[best_pow].cluster_centers_
+    nice_path = path_thru_points(pd.DataFrame(sites, columns=coords))
+    pd.DataFrame(sites).iloc[nice_path].to_csv(out_name, index=False, header=False)
 
 def max_by_min(zs, labels):
     num_clusters = max(labels)+1
