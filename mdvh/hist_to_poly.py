@@ -7,155 +7,32 @@ from scipy.spatial import Voronoi, voronoi_plot_2d
 
 
 def dist2(p1, p2):
+    # Calculate the squared distance between two points
     return (p1[0]-p2[0])**2. + (p1[1]-p2[1])**2.
 
-def find_closest(test, points):
-    min_dist = float("inf")
+def find_closest(test, sites):
+    # Find the closest site to a test point
+    min_dist = Inf
     closest_ind = -1
-    for (i, point) in enumerate(points):
-        dist = dist2(point,test)
+    for i, site in enumerate(sites):
+        dist = dist2(site,test)
         if dist < min_dist:
             min_dist = dist
             closest_ind = i
     return closest_ind
 
-def in_box(test, bounds):
-    for coord, bmin in zip(test, bounds[0]):
-        if coord < bmin:
+def in_box(test, bmin, bmax):
+    # Check if a test point lies inside the bounding box
+    for coord, b in zip(test, bmin):
+        if coord < b:
             return False
-    for coord, bmax in zip(test, bounds[1]):
-        if coord > bmax:
+    for coord, b in zip(test, bmax):
+        if coord > b:
             return False
     return True
 
-def point_dir_to_bbox(point, direction, bounds):
-    xbound = bounds[int(direction[0] > 0)][0]
-    ybound = bounds[int(direction[1] > 0)][1]
-    m = direction[0]/direction[1]
-    
-    xint = m*(ybound-point[1])+point[0]
-    yint = (1./m)*(xbound-point[0])+point[1]
-    xt = (xbound-point[0])/direction[0]
-    yt = (ybound-point[1])/direction[1]
-    
-    return [xbound, yint] if xt < yt else [xint, ybound]
-    
-
-def calc_bbox_intersection(point_pair, vertex, points, bounds):
-    dists = [dist2(vertex, point) for point in points]
-    assert(isclose(*(dists[p] for p in point_pair)))
-    radius = dists[point_pair[0]]
-    other_point = -1
-    for i, dist in enumerate(dists):
-        if isclose(dist, radius) and i not in point_pair:
-            other_point = i
-    assert(other_point > 0)
-    pair_vec = array(points[point_pair[0]])-array(points[point_pair[1]])
-    ridge_dir = array([pair_vec[1], -pair_vec[0]])
-    trial = point_dir_to_bbox(array(vertex), ridge_dir, bounds)
-    if find_closest(trial, points) not in point_pair:
-        return point_dir_to_bbox(array(vertex), -1*ridge_dir, bounds)
-    return trial
-
-def voronoi_polygons_bbox_2d_helper(vor, bmin, bmax):
-    if vor.points.shape[1] != 2:
-        raise ValueError("Can only plot 2d regions")
-    bounds = [bmin, bmax]
-    vertices = vor.vertices.tolist()[:]
-    ridge_vertices = vor.ridge_vertices[:]
-    ridge_points = vor.ridge_points.tolist()[:]
-    regions = vor.regions[:]
-    
-    # Trim vertices lying out of bounds. These will become new points at infinity, and will have
-    # negative labels.
-    vertex_labels = []
-    trimmed_vertices = []
-    curr_label = 0
-    num_cut = 0
-    for vertex in vertices:
-        if in_box(vertex, bounds):
-            vertex_labels.append(curr_label)
-            trimmed_vertices.append(vertex)
-            curr_label += 1
-        else:
-            num_cut += 1
-            vertex_labels.append(-1-num_cut)
-    vertices = trimmed_vertices[:]
-    num_unaltered_vertices = len(vertices)
-    ridge_vertices = [[vertex_labels[v] if v >= 0 else -1 for v in ridge] for ridge in ridge_vertices]
-    regions = [[vertex_labels[v] if v >= 0 else -1 for v in region] for region in regions]
-        
-    # Delete all ridges between points at infinity
-    is_inf_ridges = [all([v < 0 for v in ridge]) for ridge in ridge_vertices]
-    trimmed_ridge_vertices = []
-    trimmed_ridge_points = []
-    for i, is_inf in enumerate(is_inf_ridges):
-        if not is_inf:
-            trimmed_ridge_vertices.append(ridge_vertices[i])
-            trimmed_ridge_points.append(ridge_points[i])
-    ridge_vertices = trimmed_ridge_vertices[:]
-    ridge_points = trimmed_ridge_points[:]
-    
-    # For each escaping edge, calculate bbox intersection, append to vertices, and replace all
-    # instances in regions of that edge with the new vertex
-    for e, ridge in enumerate(ridge_vertices):
-        if ridge[0] >= 0 and ridge[1] >= 0:
-            continue
-        escapee = min(ridge)
-        partner = max(ridge)
-        for r, region in enumerate(regions):
-            new_region = region.copy()
-            for i, v in enumerate(region):
-                before = (i-1)%len(region)
-                after = (i+1)%len(region)
-                if region[i] == escapee:
-                    if region[after]==partner:
-                        if region[before]>=num_unaltered_vertices: # Has already escaped to infinity?
-                            new_region[i] = len(vertices)
-                        else:
-                            new_region.insert(after, len(vertices))
-                    elif region[before]==partner:
-                        if region[after]>=num_unaltered_vertices:
-                            new_region[i] = len(vertices)
-                        else:
-                            new_region.insert(i, len(vertices))
-            regions[r] = new_region
-        bbox_intersection = calc_bbox_intersection(ridge_points[e], vertices[partner], vor.points, bounds)
-        vertices.append(bbox_intersection)
-        
-    # Delete any lingering ridges at infinity from each region
-    for r, region in enumerate(regions):
-        regions[r] = list(filter(lambda x: x>=0, region))
-
-    # Insert corners into appropriate regions
-    for i in range(4):
-        corner = [bounds[i//2][0], bounds[i%2][1]]
-        closest_region_ind = vor.point_region[find_closest(corner, vor.points)]
-        regions[closest_region_ind].append(len(vertices))
-        vertices.append(corner)
-    
-    # Sort regions so all points go counterclockwise (borrowed from https://gist.github.com/pv/8036995)
-    for r, region in enumerate(regions):
-        if len(region) == 0:
-            continue
-        vs = asarray([vertices[v] for v in region])
-        c = vs.mean(axis=0)
-        angles = arctan2(vs[:,1] - c[1], vs[:,0] - c[0])
-        regions[r] = list(array(region)[argsort(angles)])
-    
-    # Finally, match up regions with the initial points
-    regions = array(regions, dtype='object')
-    regions = list(regions[vor.point_region])
-    
-    return regions, vertices
-
-def voronoi_polygons_bbox_2d(points, bmin, bmax):
-    vor = Voronoi(points, incremental=True)
-    vor.close()
-
-    return voronoi_polygons_bbox_2d_helper(vor, bmin, bmax)
-
 def calc_area(region, vertices):
+    # Use the shoelace theorem to compute the area of a region
     if(len(region) < 3):
         return 0
     reg = region.copy()
@@ -172,19 +49,209 @@ def make_polygon(region, vertices):
     xy = array([array(vertices[v]) for v in region])
     return Polygon(xy)
 
-def voronoi_hist_from_1D_hist(hist, points, bmin, bmax):
-    vor = Voronoi(points, incremental=True)
+def voronoi_hist_from_1D_hist(hist, sites, bmin, bmax):
+    # Scale a histogram by the areas of the voronoi cells
+    vor = Voronoi(sites, incremental=True)
     vor.close()
 
-    regions, vertices = voronoi_polygons_bbox_2d(points, bmin, bmax)
+    regions, vertices = voronoi_polygons_bbox_2d(sites, bmin, bmax)
     areas = [calc_area(reg, vertices) for reg in regions]
     scaled = array(hist)/array(areas)
     
     return list(scaled), regions, vertices
 
-def get_polygons(points, bmin, bmax):
-    vor = Voronoi(points, incremental=True)
+def get_polygons(sites, bmin, bmax):
+    vor = Voronoi(sites, incremental=True)
     vor.close()
     
-    regions, vertices = voronoi_polygons_bbox_2d(points, bmin, bmax)
+    regions, vertices = voronoi_polygons_bbox_2d(sites, bmin, bmax)
+    
     return [make_polygon(reg,vertices) for reg in regions]
+
+def along_boundary(test, site_pair, sites):
+    # Check if a given test point is on the boundary between two sites
+    dists = [dist2(test, sites[s]) for s in site_pair] # test should be equidistant from the sites
+    neighbor = find_closest(test, sites) # The closest site to test should be in site_pair
+    return neighbor in site_pair and isclose(dists[0], dists[1])
+
+def slice_bbox(vertex, site_pair, sites, bmin, bmax):
+    # Calculates entry and exit points for ray that passes through vertex and is a perpendicular bisector
+    # to the pair of sites
+    pts = [array(sites[s]) for s in site_pair]
+    direction = pts[0]+pts[1] - 2*array(vertex) # v2 = p2 + p1 - v1, v2 is the mirror of v1 across p1-p2
+    
+    itxs = []
+    for bound in [bmin, bmax]:
+        for c in [0,1]:
+            if direction[c] == 0:
+                itxs.append(array([Inf, Inf]))
+                itxs[-1][c] = bound[c]
+                itxs[-1][1-c] = vertex[1-c]
+            else:
+                t = (bound[c]-vertex[c])/direction[c] # |v1> + t*|d> = |bound>
+                itxs.append(vertex + t * direction)
+    
+    # Add some slop to avoid floating-point errors
+    for itx in itxs:
+        for i, c in enumerate(itx):
+            if isclose(c,0):
+                itx[i] = 0.
+    
+    result = []
+    for itx in itxs:
+        if in_box(itx, bmin, bmax) and along_boundary(itx, site_pair, sites):
+            result.append(itx)     
+    
+    return result
+    
+def escape_bbox(vertex, site_pair, sites, bmin, bmax):
+    # Calculates exit point for ray passing through vertex, perpendicular to the pair of sites, that passes
+    # between the sites
+    assert(in_box(vertex, bmin, bmax))
+    slices = slice_bbox(vertex, site_pair, sites, bmin, bmax)
+    return slices[0]
+    
+def voronoi_polygons_bbox_2d(sites, bmin, bmax, verbose=False):
+    
+    vor = Voronoi(sites, incremental=True)
+    vor.close()
+    
+    if vor.points.shape[1] != 2:
+        raise ValueError("Can only plot 2d Voronoi Histograms")
+    
+    # Prepare data structures
+    regions = [vor.regions[p] for p in vor.point_region]
+    vertices = list(vor.vertices[:])
+    points = list(vor.points[:])
+    ridge_points = list(vor.ridge_points[:])
+    ridge_vertices = list(vor.ridge_vertices[:])
+    
+    corners = []
+    for bound1 in bmin, bmax:
+        for bound2 in bmin, bmax:
+            corners.append([bound1[0], bound2[1]])
+    
+    vertex_labels = list(range(len(vertices)))
+    
+    # Relabel all infinite vertices by looping through all ridges
+    true_infinities = 0
+    for e, ridge in enumerate(ridge_vertices):
+        if -1 in ridge:
+            # Insert the new infinities into the appropriate regions
+            true_infinities += 1
+            new_label = -1-true_infinities
+            ridge[ridge.index(-1)] = new_label
+            other_vertex = max(ridge)
+            for reg in [regions[p] for p in ridge_points[e]]:
+                reg.append(new_label)
+            vertex_labels.append(new_label)
+    # Count number of "true infinities"
+    last_infinity_label = -1-true_infinities
+    # Remove -1 from all regions
+    for reg in regions:
+        if -1 in reg:
+            reg.remove(-1)
+    
+    # Relabel vertices outside bounding box
+    # Edit all regions and ridges to use the new labels
+    new_label = last_infinity_label-1
+    for v, vtx in enumerate(vertices):
+        if not in_box(vtx, bmin, bmax):
+            new_label -= 1
+            vertex_labels[v] = new_label
+            # Edit all ridges to use the new label
+            for rv in ridge_vertices:
+                if v in rv:
+                    rv[rv.index(v)] = new_label
+            # Edit all regions to use the new label
+            for reg in regions:
+                if v in reg:
+                    reg[reg.index(v)] = new_label            
+    
+    # Keep edges with vertices outside bounding box that intersect the bounding box
+    new_ridge_points = []
+    new_ridge_vertices = []
+    for e, rv in enumerate(ridge_vertices):
+        # Check for ridges where both points are outside the bounding box
+        rp = ridge_points[e]
+        if rv[0] < 0 and rv[1] < 0:
+            assert(any(array(rv) < last_infinity_label)) # There shouldn't be any ridges between true infinities.
+            # Check if ridge/ray intersects the bounding box.
+            new_vtxs = slice_bbox(vertices[vertex_labels.index(min(rv))], ridge_points[e], points, bmin, bmax)
+            # If the ridge/ray intersects the bbox:
+            if len(new_vtxs) > 0:
+                # Draw the ray from minimum label (which should always be a finite vertex)
+                new_vtxs = slice_bbox(vertices[vertex_labels.index(min(rv))], ridge_points[e], points, bmin, bmax)
+                
+                for new_vtx in new_vtxs:
+                    vertex_labels.append(len(vertices))
+                    vertices.append(new_vtx)
+                
+                for reg in regions:
+                    if rv[0] in reg and rv[1] in reg:
+                        reg.append(vertex_labels[-1])
+                        reg.append(vertex_labels[-2])  
+                
+                new_ridge_points.append(ridge_points[e])
+                new_ridge_vertices.append([vertex_labels[-1], vertex_labels[-2]])
+                
+            # If the ridge/ray does not intersect the bbox we can safely ignroe it
+            else:
+                pass
+        
+        # If edge escapes bounding box from inside, calculate intersection of ray from inside point to bounding box
+        elif rv[0] < 0 or rv[1] < 0:
+
+            finite_vertex = vertices[max(rv)]
+            new_vtx = escape_bbox(finite_vertex, ridge_points[e], points, bmin, bmax)
+            
+            vertex_labels.append(len(vertices))
+            vertices.append(new_vtx)
+            
+            for reg in regions:
+                if rv[0] in reg and rv[1] in reg:
+                    reg.append(vertex_labels[-1])
+                       
+            new_ridge_points.append(ridge_points[e])
+            new_ridge_vertices.append([max(rv), vertex_labels[-1]])
+            
+        # Keep ridges that are definitiely in the bounding box
+        else:
+            new_ridge_points.append(ridge_points[e])
+            new_ridge_vertices.append(rv)
+            
+    ridge_points = new_ridge_points[:]
+    ridge_vertices = new_ridge_vertices[:]
+    
+    # Remove negative vertices from regions
+    new_regions = []
+    for reg in regions:
+        new_regions.append([])
+        for v in reg:
+            if v >= 0:
+                new_regions[-1].append(v)
+    regions = new_regions[:]
+    
+    # Clean up vertex labels
+    # TODO, not strictly necessary
+    # Without this step, the output list of vertices will include the original vertices
+    # which lie outside the bounding box. However, none of the regions will use these
+    # vertices, so skipping this step won't affect final polygons.
+    
+    # Insert bbox corners into appropriate regions
+    for corner in corners:
+        closest_site = find_closest(corner, points)
+        vertex_labels.append(len(vertices))
+        vertices.append(corner)
+        regions[closest_site].append(vertex_labels[-1])
+    
+    # Sort regions so all points go counterclockwise (borrowed from https://gist.github.com/pv/8036995)
+    for r, region in enumerate(regions):
+        if len(region) == 0:
+            continue
+        vs = asarray([vertices[v] for v in region])
+        c = vs.mean(axis=0)
+        angles = arctan2(vs[:,1] - c[1], vs[:,0] - c[0])
+        regions[r] = list(array(region)[argsort(angles)])
+        
+    return regions, asarray(vertices)
