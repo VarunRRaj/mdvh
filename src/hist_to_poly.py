@@ -254,4 +254,6 @@ def voronoi_polygons_bbox_2d(sites, bmin, bmax, verbose=False):
         angles = arctan2(vs[:,1] - c[1], vs[:,0] - c[0])
         regions[r] = list(array(region)[argsort(angles)])
         
-    return regions, asarray(vertices)
+    areas = [calc_area(reg, vertices) for reg in regions]
+
+    return regions, asarray(vertices), areas
