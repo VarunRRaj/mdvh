@@ -261,7 +261,7 @@ function calc_cell_polygons(in_json, unscaled_min, unscaled_max; out_name="")
     bbox_max = unscaled_max ./ scales
 
     pushfirst!(PyVector(pyimport("sys")."path"), "")
-    poly = pyimport("hist_to_poly")
+    poly = pyimport("cell_geometry")
     regions, vertices, areas = poly.voronoi_polygons_bbox_2d(sites, bbox_min, bbox_max)
 
     vertices = [vertices[i,:] for i in 1:length(vertices[:,1])]
@@ -278,4 +278,6 @@ function calc_cell_polygons(in_json, unscaled_min, unscaled_max; out_name="")
     open(out_name, "w") do f
         write(f, jout)
     end
+end
+
 end
